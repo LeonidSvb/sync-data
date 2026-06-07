@@ -5,6 +5,7 @@ import { syncCampaignStats, syncWarmupStats, syncLeadStatusCounts } from './plus
 import { syncYesterdayDailyStats } from './plusvibe/api/daily_stats.js';
 import { syncRecentEmails } from './plusvibe/api/emails.js';
 import { syncCalcom } from './calcom/sync.js';
+import { syncRevenue } from './revenue/sync.js';
 import { sendDailyReport } from './notifications/daily_report.js';
 import { checkAndSendAlerts } from './notifications/alerts.js';
 
@@ -18,6 +19,7 @@ const runners = {
   daily_stats: () => syncYesterdayDailyStats(),
   emails:      () => syncRecentEmails(),
   calcom:      () => syncCalcom(),
+  revenue:     () => syncRevenue(),
   report:      () => sendDailyReport(),
   alerts:      () => checkAndSendAlerts(),
   all: async () => {
