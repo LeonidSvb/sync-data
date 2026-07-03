@@ -8,6 +8,7 @@ import { syncCalcom } from './calcom/sync.js';
 import { syncRevenue } from './revenue/sync.js';
 import { sendDailyReport } from './notifications/daily_report.js';
 import { checkAndSendAlerts } from './notifications/alerts.js';
+import { showHealth } from './lib/health.js';
 
 const cmd = process.argv[2] || 'all';
 
@@ -22,10 +23,12 @@ const runners = {
   revenue:     () => syncRevenue(),
   report:      () => sendDailyReport(),
   alerts:      () => checkAndSendAlerts(),
+  health:      () => showHealth(),
   all: async () => {
     await syncCampaigns();
     await syncLeads();
     await syncEmailAccounts();
+    await syncRecentEmails();
     await Promise.all([syncCampaignStats(), syncWarmupStats(), syncLeadStatusCounts()]);
   },
 };

@@ -7,12 +7,21 @@ const KEY = process.env.PLUSVIBE_API_KEY;
 const WS = process.env.PLUSVIBE_WORKSPACE_ID;
 const HEADERS = { 'x-api-key': KEY };
 
-async function fetchEmailsPage(pageTrail = null) {
+async function fetchEmailsPage(pageTrail = null, retries = 5) {
   const params = new URLSearchParams({ workspace_id: WS, email_type: 'all' });
   if (pageTrail) params.set('page_trail', pageTrail);
-  const res = await fetch(`${BASE}/unibox/emails?${params}`, { headers: HEADERS });
-  if (!res.ok) throw new Error(`Unibox API returned ${res.status}`);
-  return res.json();
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(`${BASE}/unibox/emails?${params}`, { headers: HEADERS });
+    if (res.status === 429) {
+      const wait = 2000 * Math.pow(2, attempt);
+      console.log(`  429 rate limited, retry ${attempt + 1}/${retries} after ${wait}ms`);
+      await new Promise(r => setTimeout(r, wait));
+      continue;
+    }
+    if (!res.ok) throw new Error(`Unibox API returned ${res.status}`);
+    return res.json();
+  }
+  throw new Error('Unibox API returned 429 after all retries');
 }
 
 async function upsertEmail(e, source = 'api_sync') {
@@ -69,7 +78,7 @@ export async function backfillEmails() {
     pageTrail = data.page_trail || null;
     if (!pageTrail) break;
 
-    await new Promise(r => setTimeout(r, 210));
+    await new Promise(r => setTimeout(r, 600));
   }
 
   await logSync('emails_backfill', startedAt, { processed: total, upserted: total, deleted: 0, status: 'success' });
@@ -102,7 +111,7 @@ export async function syncRecentEmails() {
     pageTrail = data.page_trail || null;
     if (!pageTrail || recent.length < emails.length) break;
 
-    await new Promise(r => setTimeout(r, 210));
+    await new Promise(r => setTimeout(r, 600));
   }
 
   await logSync('emails_sync', startedAt, { processed: total, upserted: total, deleted: 0, status: 'success' });
