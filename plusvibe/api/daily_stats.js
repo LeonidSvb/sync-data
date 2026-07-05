@@ -53,6 +53,7 @@ export async function backfillDailyStats(fromDate = '2026-01-01') {
 
     for (const date of relevantDates) {
       try {
+        await new Promise(r => setTimeout(r, 210)); // rate limit 5 req/sec
         const raw = await getCampaignStats(campaign.id, date, date);
         const s = Array.isArray(raw) ? raw[0] : raw;
         if (!s || s.message || s.error || s.code === 0) { skipped++; continue; }
@@ -81,6 +82,7 @@ export async function syncYesterdayDailyStats() {
     let upserted = 0;
 
     for (const campaign of campaigns) {
+      await new Promise(r => setTimeout(r, 210)); // rate limit 5 req/sec
       const raw = await getCampaignStats(campaign.id, yesterday, yesterday);
       const s = Array.isArray(raw) ? raw[0] : raw;
       if (!s || s.message || s.error || s.code === 0) continue;
