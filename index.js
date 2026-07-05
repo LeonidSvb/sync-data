@@ -1,7 +1,7 @@
 import { syncCampaigns } from './plusvibe/api/campaigns.js';
 import { syncLeads } from './plusvibe/api/leads.js';
 import { syncEmailAccounts } from './plusvibe/api/email_accounts.js';
-import { syncCampaignStats, syncWarmupStats, syncLeadStatusCounts } from './plusvibe/api/stats.js';
+import { syncTags } from './plusvibe/api/tags.js';
 import { syncYesterdayDailyStats } from './plusvibe/api/daily_stats.js';
 import { syncRecentEmails } from './plusvibe/api/emails.js';
 import { syncCalcom } from './calcom/sync.js';
@@ -16,7 +16,7 @@ const runners = {
   campaigns:   () => syncCampaigns(),
   leads:       () => syncLeads(),
   accounts:    () => syncEmailAccounts(),
-  stats:       () => Promise.all([syncCampaignStats(), syncWarmupStats(), syncLeadStatusCounts()]),
+  tags:        () => syncTags(),
   daily_stats: () => syncYesterdayDailyStats(),
   emails:      () => syncRecentEmails(),
   calcom:      () => syncCalcom(),
@@ -28,8 +28,8 @@ const runners = {
     await syncCampaigns();
     await syncLeads();
     await syncEmailAccounts();
+    await syncTags();
     await syncRecentEmails();
-    await Promise.all([syncCampaignStats(), syncWarmupStats(), syncLeadStatusCounts()]);
   },
 };
 

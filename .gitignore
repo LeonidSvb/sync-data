@@ -1,0 +1,4 @@
+google-service-account.json
+.env
+sync.log
+node_modules/

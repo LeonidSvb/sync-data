@@ -7,7 +7,7 @@
     "campaigns": "node index.js campaigns",
     "leads": "node index.js leads",
     "accounts": "node index.js accounts",
-    "stats": "node index.js stats",
+    "tags": "node index.js tags",
     "daily_stats": "node index.js daily_stats",
     "emails": "node index.js emails",
     "calcom": "node index.js calcom",
