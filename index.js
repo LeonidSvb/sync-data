@@ -9,6 +9,8 @@ import { syncRevenue } from './revenue/sync.js';
 import { sendDailyReport } from './notifications/daily_report.js';
 import { checkAndSendAlerts } from './notifications/alerts.js';
 import { showHealth } from './lib/health.js';
+import { syncDomainInfra } from './domain-infra/sync.js';
+import { checkDomainInfraAlerts } from './domain-infra/alerts.js';
 
 const cmd = process.argv[2] || 'all';
 
@@ -24,6 +26,7 @@ const runners = {
   report:      () => sendDailyReport(),
   alerts:      () => checkAndSendAlerts(),
   health:      () => showHealth(),
+  domain_infra: async () => { await syncDomainInfra(); await checkDomainInfraAlerts(); },
   all: async () => {
     await syncCampaigns();
     await syncLeads();

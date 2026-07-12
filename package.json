@@ -12,7 +12,8 @@
     "emails": "node index.js emails",
     "calcom": "node index.js calcom",
     "report": "node index.js report",
-    "alerts": "node index.js alerts"
+    "alerts": "node index.js alerts",
+    "domain_infra": "node index.js domain_infra"
   },
   "dependencies": {
     "pg": "^8.20.0"
