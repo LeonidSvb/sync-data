@@ -28,13 +28,14 @@ async function upsertEmail(e, source = 'api_sync') {
   await query(`
     INSERT INTO emails (
       id, thread_id, campaign_id, lead_id, lead_email,
-      from_email, sending_account, subject, body_text,
+      from_email, sending_account, subject, body_text, body_html,
       direction, label, is_unread, event_type, sent_at, source
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
     ON CONFLICT (id) DO UPDATE SET
       label = EXCLUDED.label,
       is_unread = EXCLUDED.is_unread,
-      source = EXCLUDED.source
+      source = EXCLUDED.source,
+      body_html = COALESCE(emails.body_html, EXCLUDED.body_html)
   `, [
     e.id,
     e.thread_id || null,
@@ -45,6 +46,7 @@ async function upsertEmail(e, source = 'api_sync') {
     e.eaccount || null,
     e.subject || null,
     e.body?.text || e.content_preview || null,
+    e.body?.html || null,
     ['IN', 'in', 'incoming'].includes(e.direction) ? 'IN' : 'OUT',
     e.label || null,
     e.is_unread || false,
