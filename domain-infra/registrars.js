@@ -27,9 +27,15 @@ async function getCloudflare() {
   }));
 }
 
+// Was calling this endpoint with ?per_page=100 — CF rejects that on /pages/projects (error
+// 8000024 "Invalid list options provided"), so `data.success` was always false and this returned
+// {} on every run, silently leaving cf_pages_project NULL for all 32 domains. Confirmed live
+// 2026-08-15 via direct API call. Dropping per_page fixes the call; the project list response
+// already embeds each project's attached custom domains, so the old per-project follow-up fetch
+// (one extra request per project) is unnecessary too.
 async function getCfPagesMap() {
   const r = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${process.env.CF_ACCOUNT_ID}/pages/projects?per_page=100`,
+    `https://api.cloudflare.com/client/v4/accounts/${process.env.CF_ACCOUNT_ID}/pages/projects`,
     { headers: { 'X-Auth-Email': process.env.CF_EMAIL, 'X-Auth-Key': process.env.CF_GLOBAL_API_KEY } },
   );
   const data = await r.json();
@@ -37,12 +43,7 @@ async function getCfPagesMap() {
 
   const map = {};
   for (const project of data.result || []) {
-    const domainsRes = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${process.env.CF_ACCOUNT_ID}/pages/projects/${project.name}/domains`,
-      { headers: { 'X-Auth-Email': process.env.CF_EMAIL, 'X-Auth-Key': process.env.CF_GLOBAL_API_KEY } },
-    );
-    const dd = await domainsRes.json();
-    for (const d of dd.result || []) map[d.name] = project.name;
+    for (const domain of project.domains || []) map[domain] = project.name;
   }
   return map;
 }
