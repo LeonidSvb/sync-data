@@ -72,10 +72,48 @@ export async function backfillDailyStats(fromDate = '2026-01-01') {
   return { inserted, skipped, errors };
 }
 
+// PlusVibe's own analytics for a given day are NOT final the next night — confirmed live 2026-08-18
+// by re-querying /analytics/campaign/stats for 3 already-passed days (Aug 15/16/17) and getting real
+// nonzero numbers back, when our nightly job had queried those SAME exact days on schedule and gotten
+// back zero. The data genuinely changes on PlusVibe's side over the following days (their own
+// eventual-consistency lag, not a bug in when/how we ask). A single fixed-date query is fundamentally
+// unable to catch a correction that lands after the one time we asked — so every run (nightly AND
+// intraday) now re-checks a rolling window of recent days instead of exactly one, and relies on the
+// upsert already being idempotent per (campaign_id, stat_date) to make repeated re-checks free.
+const LOOKBACK_DAYS = 4;
+
+function recentDates(endDate, days) {
+  const dates = [];
+  const end = new Date(`${endDate}T00:00:00Z`);
+  for (let i = 0; i < days; i++) {
+    const d = new Date(end);
+    d.setUTCDate(d.getUTCDate() - i);
+    dates.push(d.toISOString().split('T')[0]);
+  }
+  return dates;
+}
+
+async function syncDatesForCampaigns(campaigns, dates) {
+  let upserted = 0;
+  for (const campaign of campaigns) {
+    for (const date of dates) {
+      await new Promise(r => setTimeout(r, 210)); // rate limit 5 req/sec
+      const raw = await getCampaignStats(campaign.id, date, date);
+      const s = Array.isArray(raw) ? raw[0] : raw;
+      if (!s || s.message || s.error) continue;
+      if (!s.sent_count && !s.replied_count && !s.bounced_count) continue;
+
+      await upsertDailyStat(campaign.id, campaign.camp_name, date, s);
+      upserted++;
+    }
+  }
+  return upserted;
+}
+
 // Intraday top-up — runs every 30 min (see crontab), only for campaigns that could plausibly have
-// moved TODAY, so it stays cheap (a handful of API calls, not all ~77 campaigns every 30 min).
-// syncYesterdayDailyStats() still runs once nightly across every campaign and remains the
-// authoritative full pass for a finished day — this function only exists to close the up-to-24h
+// moved recently, so it stays cheap (a handful of campaigns x LOOKBACK_DAYS calls, not all ~77
+// campaigns x many days every 30 min). syncYesterdayDailyStats() still runs once nightly across
+// every campaign and remains the authoritative full pass — this function only exists to close the
 // gap between a real send and it showing up in the dashboard (Leo caught this live, 2026-08-18).
 //
 // Edge case Leo asked about directly: a campaign that goes ACTIVE -> COMPLETED/PAUSED in the
@@ -83,12 +121,12 @@ export async function backfillDailyStats(fromDate = '2026-01-01') {
 // still has today's partial-day numbers to report. Fixed by also including any campaign whose
 // modified_at is today — PlusVibe flips modified_at on every status change, so a campaign that
 // just completed still qualifies for one more pass before it ages out. Worst case beyond that
-// (missed by both this AND still not "yesterday" yet) self-heals the next night regardless, since
-// syncYesterdayDailyStats() re-syncs everyone once the day is over.
+// self-heals the next night regardless, since syncYesterdayDailyStats() re-syncs everyone.
 export async function syncTodayActiveDailyStats() {
   const startedAt = new Date();
   const today = new Date().toISOString().split('T')[0];
-  console.log(`  Syncing intraday stats for ${today}...`);
+  const dates = recentDates(today, LOOKBACK_DAYS);
+  console.log(`  Syncing intraday stats for ${dates.join(', ')}...`);
 
   try {
     const campaigns = await getCampaigns();
@@ -96,20 +134,10 @@ export async function syncTodayActiveDailyStats() {
       c.status === 'ACTIVE' || (c.modified_at && c.modified_at.slice(0, 10) === today)
     );
 
-    let upserted = 0;
-    for (const campaign of relevant) {
-      await new Promise(r => setTimeout(r, 210)); // rate limit 5 req/sec
-      const raw = await getCampaignStats(campaign.id, today, today);
-      const s = Array.isArray(raw) ? raw[0] : raw;
-      if (!s || s.message || s.error || s.code === 0) continue;
-      if (!s.sent_count && !s.replied_count && !s.bounced_count) continue;
+    const upserted = await syncDatesForCampaigns(relevant, dates);
 
-      await upsertDailyStat(campaign.id, campaign.camp_name, today, s);
-      upserted++;
-    }
-
-    await logSync('daily_stats_intraday', startedAt, { processed: relevant.length, upserted, status: 'success' });
-    console.log(`  daily_stats_intraday: ${upserted}/${relevant.length} campaigns updated for ${today}`);
+    await logSync('daily_stats_intraday', startedAt, { processed: relevant.length * dates.length, upserted, status: 'success' });
+    console.log(`  daily_stats_intraday: ${upserted} rows updated across ${relevant.length} campaigns`)
   } catch (e) {
     await logSync('daily_stats_intraday', startedAt, { status: 'error', error: e.message });
     console.error('  daily_stats_intraday sync failed:', e.message);
@@ -119,25 +147,15 @@ export async function syncTodayActiveDailyStats() {
 export async function syncYesterdayDailyStats() {
   const startedAt = new Date();
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-  console.log(`  Syncing daily stats for ${yesterday}...`);
+  const dates = recentDates(yesterday, LOOKBACK_DAYS);
+  console.log(`  Syncing daily stats for ${dates.join(', ')}...`);
 
   try {
     const campaigns = await getCampaigns();
-    let upserted = 0;
+    const upserted = await syncDatesForCampaigns(campaigns, dates);
 
-    for (const campaign of campaigns) {
-      await new Promise(r => setTimeout(r, 210)); // rate limit 5 req/sec
-      const raw = await getCampaignStats(campaign.id, yesterday, yesterday);
-      const s = Array.isArray(raw) ? raw[0] : raw;
-      if (!s || s.message || s.error || s.code === 0) continue;
-      if (!s.sent_count && !s.replied_count && !s.bounced_count) continue;
-
-      await upsertDailyStat(campaign.id, campaign.camp_name, yesterday, s);
-      upserted++;
-    }
-
-    await logSync('daily_stats', startedAt, { processed: campaigns.length, upserted, status: 'success' });
-    console.log(`  daily_stats: ${upserted} campaigns updated for ${yesterday}`);
+    await logSync('daily_stats', startedAt, { processed: campaigns.length * dates.length, upserted, status: 'success' });
+    console.log(`  daily_stats: ${upserted} rows updated across ${campaigns.length} campaigns`)
   } catch (e) {
     await logSync('daily_stats', startedAt, { status: 'error', error: e.message });
     console.error('  daily_stats sync failed:', e.message);
