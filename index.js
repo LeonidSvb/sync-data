@@ -2,7 +2,7 @@ import { syncCampaigns } from './plusvibe/api/campaigns.js';
 import { syncLeads } from './plusvibe/api/leads.js';
 import { syncEmailAccounts } from './plusvibe/api/email_accounts.js';
 import { syncTags } from './plusvibe/api/tags.js';
-import { syncYesterdayDailyStats } from './plusvibe/api/daily_stats.js';
+import { syncYesterdayDailyStats, syncTodayActiveDailyStats } from './plusvibe/api/daily_stats.js';
 import { syncRecentEmails, backfillEmails } from './plusvibe/api/emails.js';
 import { syncCalcom } from './calcom/sync.js';
 import { syncRevenue } from './revenue/sync.js';
@@ -20,6 +20,7 @@ const runners = {
   accounts:    () => syncEmailAccounts(),
   tags:        () => syncTags(),
   daily_stats: () => syncYesterdayDailyStats(),
+  daily_stats_intraday: () => syncTodayActiveDailyStats(),
   emails:      () => syncRecentEmails(),
   emails_backfill: () => backfillEmails(),
   calcom:      () => syncCalcom(),

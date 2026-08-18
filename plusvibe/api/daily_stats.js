@@ -72,6 +72,50 @@ export async function backfillDailyStats(fromDate = '2026-01-01') {
   return { inserted, skipped, errors };
 }
 
+// Intraday top-up — runs every 30 min (see crontab), only for campaigns that could plausibly have
+// moved TODAY, so it stays cheap (a handful of API calls, not all ~77 campaigns every 30 min).
+// syncYesterdayDailyStats() still runs once nightly across every campaign and remains the
+// authoritative full pass for a finished day — this function only exists to close the up-to-24h
+// gap between a real send and it showing up in the dashboard (Leo caught this live, 2026-08-18).
+//
+// Edge case Leo asked about directly: a campaign that goes ACTIVE -> COMPLETED/PAUSED in the
+// 30-min gap between two runs. Filtering to status==='ACTIVE' alone would drop it right when it
+// still has today's partial-day numbers to report. Fixed by also including any campaign whose
+// modified_at is today — PlusVibe flips modified_at on every status change, so a campaign that
+// just completed still qualifies for one more pass before it ages out. Worst case beyond that
+// (missed by both this AND still not "yesterday" yet) self-heals the next night regardless, since
+// syncYesterdayDailyStats() re-syncs everyone once the day is over.
+export async function syncTodayActiveDailyStats() {
+  const startedAt = new Date();
+  const today = new Date().toISOString().split('T')[0];
+  console.log(`  Syncing intraday stats for ${today}...`);
+
+  try {
+    const campaigns = await getCampaigns();
+    const relevant = campaigns.filter(c =>
+      c.status === 'ACTIVE' || (c.modified_at && c.modified_at.slice(0, 10) === today)
+    );
+
+    let upserted = 0;
+    for (const campaign of relevant) {
+      await new Promise(r => setTimeout(r, 210)); // rate limit 5 req/sec
+      const raw = await getCampaignStats(campaign.id, today, today);
+      const s = Array.isArray(raw) ? raw[0] : raw;
+      if (!s || s.message || s.error || s.code === 0) continue;
+      if (!s.sent_count && !s.replied_count && !s.bounced_count) continue;
+
+      await upsertDailyStat(campaign.id, campaign.camp_name, today, s);
+      upserted++;
+    }
+
+    await logSync('daily_stats_intraday', startedAt, { processed: relevant.length, upserted, status: 'success' });
+    console.log(`  daily_stats_intraday: ${upserted}/${relevant.length} campaigns updated for ${today}`);
+  } catch (e) {
+    await logSync('daily_stats_intraday', startedAt, { status: 'error', error: e.message });
+    console.error('  daily_stats_intraday sync failed:', e.message);
+  }
+}
+
 export async function syncYesterdayDailyStats() {
   const startedAt = new Date();
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
